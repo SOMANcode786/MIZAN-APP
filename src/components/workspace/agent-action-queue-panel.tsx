@@ -266,7 +266,9 @@ function WorkflowReviewCard({
 }) {
   const pending = review.status === "PENDING";
   const processing = review.status === "PROCESSING";
-  const actionHref = getActionHref(review.resultAction);
+  const caseDeleted = isDeletedCaseWorkflow(review);
+  const actionHref = caseDeleted ? "" : getActionHref(review.resultAction);
+  const actionLabel = isCaseHref(actionHref) ? "Open case" : "Open result";
   const summary = summarizeArguments(review.arguments);
 
   return (
@@ -284,6 +286,11 @@ function WorkflowReviewCard({
               <Badge variant="secondary" className="rounded-full px-3 py-1">
                 <FolderKanban className="mr-1 h-3.5 w-3.5" />
                 {review.legalCase.title}
+              </Badge>
+            ) : caseDeleted ? (
+              <Badge variant="outline" className="rounded-full border-amber-500/40 bg-amber-500/10 px-3 py-1 text-amber-700 dark:text-amber-300">
+                <FolderKanban className="mr-1 h-3.5 w-3.5" />
+                Case deleted
               </Badge>
             ) : null}
             {review.document ? (
@@ -327,7 +334,12 @@ function WorkflowReviewCard({
         </div>
 
         <div className="flex w-full flex-col gap-2 sm:flex-row lg:w-auto lg:flex-col">
-          {pending || processing ? (
+          {caseDeleted ? (
+            <Button type="button" variant="outline" disabled className="w-full lg:w-[150px]">
+              <XCircle className="mr-2 h-4 w-4" />
+              Case deleted
+            </Button>
+          ) : pending || processing ? (
             <>
               <Button type="button" disabled={busy || processing} onClick={onApprove} className="w-full lg:w-[150px]">
                 {busy || processing ? (
@@ -352,7 +364,7 @@ function WorkflowReviewCard({
             <Button asChild className="w-full lg:w-[150px]">
               <Link href={actionHref}>
                 <ExternalLink className="mr-2 h-4 w-4" />
-                Open result
+                {actionLabel}
               </Link>
             </Button>
           ) : null}
@@ -422,6 +434,25 @@ function getActionHref(value: unknown) {
   if (action && typeof action.href === "string") return action.href;
   const directHref = (value as { href?: unknown }).href;
   return typeof directHref === "string" ? directHref : "";
+}
+
+function isCaseHref(href: string) {
+  return /^\/(?:client|lawyer)\/cases\/[^/?#]+(?:$|[/?#])/.test(href);
+}
+
+function isDeletedCaseWorkflow(review: AgentWorkflowReviewItem) {
+  const resultAction = review.resultAction;
+  if (resultAction && typeof resultAction === "object") {
+    const record = resultAction as Record<string, unknown>;
+    if (record.caseDeleted === true || typeof record.deletedCaseId === "string") return true;
+    const action = record.action;
+    if (action && typeof action === "object" && (action as Record<string, unknown>).type === "case_deleted") {
+      return true;
+    }
+  }
+
+  const href = getActionHref(resultAction);
+  return Boolean(href && isCaseHref(href) && !review.legalCase);
 }
 
 function summarizeArguments(value: unknown) {

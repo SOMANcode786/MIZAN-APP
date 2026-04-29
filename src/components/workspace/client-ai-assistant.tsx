@@ -106,6 +106,7 @@ export function ClientAiAssistant({
     () => cases.find((item) => item.id === selectedCaseId) || cases[0],
     [cases, selectedCaseId]
   );
+  const knownCaseIds = useMemo(() => new Set(cases.map((item) => item.id)), [cases]);
 
   const contextCaseId = mode === "case" ? selectedCase?.id || "" : "";
 
@@ -303,16 +304,16 @@ export function ClientAiAssistant({
                 value={selectedCase?.id || ""}
                 disabled={mode !== "case" || !cases.length}
                 onChange={(event) => setSelectedCaseId(event.target.value)}
-                className="glass-chip h-11 w-full rounded-2xl px-4 text-sm outline-none transition focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-60"
+                className="glass-chip h-11 w-full rounded-2xl bg-background px-4 text-sm text-foreground outline-none transition [color-scheme:light] focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-60 dark:bg-[#05070d] dark:text-slate-100 dark:[color-scheme:dark]"
               >
                 {cases.length ? (
                   cases.map((item) => (
-                    <option key={item.id} value={item.id}>
+                    <option key={item.id} value={item.id} className="bg-background text-foreground dark:bg-[#05070d] dark:text-slate-100">
                       {item.title}
                     </option>
                   ))
                 ) : (
-                  <option>No cases yet</option>
+                  <option className="bg-background text-foreground dark:bg-[#05070d] dark:text-slate-100">No cases yet</option>
                 )}
               </select>
             </div>
@@ -338,11 +339,13 @@ export function ClientAiAssistant({
               <select
                 value={activeThreadId || "new"}
                 onChange={(event) => setActiveThreadId(event.target.value === "new" ? null : event.target.value)}
-                className="glass-chip h-11 w-full rounded-2xl px-4 text-sm outline-none transition focus-visible:ring-2 focus-visible:ring-ring"
+                className="glass-chip h-11 w-full rounded-2xl bg-background px-4 text-sm text-foreground outline-none transition [color-scheme:light] focus-visible:ring-2 focus-visible:ring-ring dark:bg-[#05070d] dark:text-slate-100 dark:[color-scheme:dark]"
               >
-                <option value="new">New conversation</option>
+                <option value="new" className="bg-background text-foreground dark:bg-[#05070d] dark:text-slate-100">
+                  New conversation
+                </option>
                 {contextThreads.map((thread) => (
-                  <option key={thread.id} value={thread.id}>
+                  <option key={thread.id} value={thread.id} className="bg-background text-foreground dark:bg-[#05070d] dark:text-slate-100">
                     {thread.title || "Untitled conversation"}
                   </option>
                 ))}
@@ -418,6 +421,7 @@ export function ClientAiAssistant({
                     key={message.id}
                     message={message}
                     disabled={loading}
+                    knownCaseIds={knownCaseIds}
                     onSend={ask}
                   />
                 ))}
@@ -616,10 +620,12 @@ function MiniMetric({
 function MessageBubble({
   message,
   disabled,
+  knownCaseIds,
   onSend
 }: {
   message: AssistantMessage;
   disabled?: boolean;
+  knownCaseIds: ReadonlySet<string>;
   onSend: (message: string) => void;
 }) {
   const isAi = message.role === "AI";
@@ -673,7 +679,7 @@ function MessageBubble({
           </div>
         ) : null}
 
-        {isAi && actionMeta ? <AgentActionCard meta={actionMeta} /> : null}
+        {isAi && actionMeta ? <AgentActionCard meta={actionMeta} knownCaseIds={knownCaseIds} /> : null}
         {isAi && !actionMeta && proposalMeta ? (
           <AgentProposalCard
             meta={proposalMeta}
@@ -699,13 +705,22 @@ function ThinkingBubble() {
 }
 
 function AgentActionCard({
-  meta
+  meta,
+  knownCaseIds
 }: {
   meta: ReturnType<typeof extractAssistantActionMeta>;
+  knownCaseIds: ReadonlySet<string>;
 }) {
   if (!meta) {
     return null;
   }
+
+  const href = meta.action?.href || "";
+  const hrefCaseId = getCaseIdFromActionHref(href);
+  const caseDeleted =
+    meta.action?.type === "case_deleted" ||
+    meta.action?.label === "Case deleted" ||
+    Boolean(hrefCaseId && !knownCaseIds.has(hrefCaseId));
 
   return (
     <div className="glass-subtle mt-4 rounded-2xl p-4">
@@ -715,14 +730,24 @@ function AgentActionCard({
           <p className="mt-1 text-sm leading-6 text-muted-foreground">{meta.message}</p>
         </div>
 
-        {meta.action?.href ? (
+        {caseDeleted ? (
+          <Button type="button" size="sm" variant="outline" disabled className="w-full sm:w-auto">
+            <XCircle className="mr-2 h-4 w-4" />
+            Case deleted
+          </Button>
+        ) : href ? (
           <Button asChild size="sm" className="w-full sm:w-auto">
-            <Link href={meta.action.href}>{meta.action.label}</Link>
+            <Link href={href}>{meta.action?.label || "Open result"}</Link>
           </Button>
         ) : null}
       </div>
     </div>
   );
+}
+
+function getCaseIdFromActionHref(href: string) {
+  const match = href.match(/^\/(?:client|lawyer)\/cases\/([^/?#]+)(?:$|[/?#])/);
+  return match?.[1] || "";
 }
 
 function AgentProposalCard({
